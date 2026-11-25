@@ -66,6 +66,19 @@ API = "https://api.github.com"
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
+# Data a tree needs to build but some forks leave out of the repository, as their own setup
+# scripts fetch it (DexNom's Initialize-FormatTables.ps1): fetched from the pinned upstream
+# commit, checked against its SHA-256, and only copied in when the tree lacks the file but has
+# the folder it goes in.
+SUPPLIED = [
+    {
+        "path": "crates/victory-formats/src/bcpack-tables.bin",
+        "url": "https://raw.githubusercontent.com/Marvisak/VIctory/2849477415a46f5a079c85cf3e64a3dff32f713c/"
+               "crates/victory-formats/src/bcpack-tables.bin",
+        "sha256": "1f1d4760419202bb5672f0c428ce51e456b5d08fbaec8f371d043fd94e01c36b",
+    },
+]
+
 FAMILIES = {
     # family: (file that marks the tree, cargo package, exe, commit file, label, --locked)
     "victory": ("apps/victory/Cargo.toml", "victory", "victory.exe", "VICTORY_COMMIT.txt", "VIctory", True),
@@ -286,8 +299,35 @@ def checkout(repo, commit, dest):
         subprocess.run(["chown", "-R", f"{BUILD_USER}:{BUILD_USER}", dest], check=True)
 
 
+_supplied = {}
+
+
+def supply_missing(src):
+    """Copies into the tree the SUPPLIED files it lacks; returns their paths."""
+    added = []
+    for item in SUPPLIED:
+        dest = os.path.join(src, item["path"])
+        if os.path.exists(dest) or not os.path.isdir(os.path.dirname(dest)):
+            continue
+        data = _supplied.get(item["path"])
+        if data is None:
+            data = http(item["url"], raw=True, timeout=120, headers={"Accept": "*/*"})
+            got = hashlib.sha256(data).hexdigest()
+            if got != item["sha256"]:
+                raise RuntimeError(f"{item['url']}: SHA-256 {got}, expected {item['sha256']}")
+            _supplied[item["path"]] = data
+        with open(dest, "wb") as f:
+            f.write(data)
+        if os.geteuid() == 0:
+            shutil.chown(dest, BUILD_USER, BUILD_USER)
+        added.append(item["path"])
+    return added
+
+
 def build_tree(family, src):
     _marker, package, exe, _cf, _label, locked = FAMILIES[family]
+    for path in supply_missing(src):
+        log(f"supplied {path} (pinned upstream copy, SHA-256 checked)")
     deadline = time.monotonic() + BUILD_TIMEOUT
     left = lambda: max(60, int(deadline - time.monotonic()))  # noqa: E731
     # The toolchain the repository pins in rust-toolchain.toml (or stable), with the MSVC target.
@@ -337,10 +377,14 @@ def collect(family, repo, commit, src, out_dir, stage):
     shutil.rmtree(stage, ignore_errors=True)
     lic = os.path.join(stage, "licenses")
     os.makedirs(lic)
-    shutil.copy2(os.path.join(out_dir, exe), stage)
-    pdb = os.path.join(out_dir, exe[:-4] + ".pdb")
-    if os.path.isfile(pdb):
-        shutil.copy2(pdb, stage)
+    # The main program and any other the package builds (DexNom: victory-play.exe,
+    # victory-warm.exe), each with its .pdb when there is one.
+    for name in sorted(os.listdir(out_dir)):
+        if name.lower().endswith(".exe") and os.path.isfile(os.path.join(out_dir, name)):
+            shutil.copy2(os.path.join(out_dir, name), stage)
+            pdb = os.path.join(out_dir, name[:-4] + ".pdb")
+            if os.path.isfile(pdb):
+                shutil.copy2(pdb, stage)
     if os.path.isfile(os.path.join(src, "LICENSE")):
         shutil.copy2(os.path.join(src, "LICENSE"), os.path.join(lic, f"{label}-LICENSE.txt"))
     lines = [f"{label} {commit}", f"repo {repo}"]

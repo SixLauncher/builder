@@ -45,5 +45,39 @@ class Score(unittest.TestCase):
         self.assertTrue(all(c.isalnum() or c in "._-" for c in name))
 
 
+class Supplied(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.src = self.tmp.name
+        build._supplied.clear()
+        self.orig = build.http
+        self.geteuid = build.os.geteuid
+        build.os.geteuid = lambda: 1000  # no chown in tests
+
+    def tearDown(self):
+        build.http = self.orig
+        build.os.geteuid = self.geteuid
+        self.tmp.cleanup()
+
+    def test_fills_a_missing_table_and_checks_it(self):
+        item = build.SUPPLIED[0]
+        os.makedirs(os.path.join(self.src, os.path.dirname(item["path"])))
+        build.http = lambda *a, **k: b"not the table"
+        with self.assertRaises(RuntimeError):
+            build.supply_missing(self.src)
+        self.assertFalse(os.path.exists(os.path.join(self.src, item["path"])))
+        good = os.environ.get("BCPACK_TABLE")
+        if not good:
+            self.skipTest("set BCPACK_TABLE to the real file to check the SHA-256")
+        build.http = lambda *a, **k: open(good, "rb").read()
+        self.assertEqual(build.supply_missing(self.src), [item["path"]])
+        self.assertEqual(build.supply_missing(self.src), [], "already there: left alone")
+
+    def test_only_where_the_folder_exists(self):
+        build.http = lambda *a, **k: self.fail("no download for a tree without the folder")
+        self.assertEqual(build.supply_missing(self.src), [])
+
+
 if __name__ == "__main__":
     unittest.main()

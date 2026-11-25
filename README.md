@@ -18,7 +18,11 @@ A cada execução (`builder/build.py`):
 
 O `runtimes.json` mantém o formato que o VILauncher já lê: `victory` e `xcl` são a melhor build de
 cada família (launchers antigos continuam funcionando) e `builds` lista todas, com a nota, para o
-launcher deixar escolher. O xcl vai com `dxcompiler.dll`/`dxil.dll` (última release do DXC) e
+launcher deixar escolher. Alguns forks deixam fora do repositório dados que o próprio setup deles baixa (o DexNom, as tabelas
+BCPack em `crates/victory-formats/src/bcpack-tables.bin`): quando a pasta existe e o arquivo falta, o
+builder baixa a cópia do commit fixo do Marvisak/VIctory e confere o SHA-256 antes de compilar
+(`SUPPLIED` em `builder/build.py`). O pacote leva todos os programas que o projeto gera (no DexNom,
+também `victory-play.exe` e `victory-warm.exe`). O xcl vai com `dxcompiler.dll`/`dxil.dll` (última release do DXC) e
 `opus.dll` (pacote UCRT64 do MSYS2, fixado por versão e SHA-256 no `Dockerfile`).
 
 ## Segurança
