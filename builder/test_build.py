@@ -79,5 +79,34 @@ class Supplied(unittest.TestCase):
         self.assertEqual(build.supply_missing(self.src), [])
 
 
+class Flagged(unittest.TestCase):
+    def scan(self, **states):
+        return {"verdict": "flagged", "files": [
+            {"name": n, "sha256": n, "state": st, "malicious": 2 if st == "flagged" else 0, "engines": 69}
+            for n, st in states.items()]}
+
+    def test_an_extra_is_dropped(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as stage:
+            for n in ("victory.exe", "victory-play.exe", "victory-play.pdb", "victory-warm.exe"):
+                open(os.path.join(stage, n), "w").close()
+            vt = build.drop_flagged_extras("victory", self.scan(**{
+                "victory.exe": "clean", "victory-play.exe": "flagged", "victory-warm.exe": "clean"}), stage)
+            self.assertEqual(vt["verdict"], "clean")
+            self.assertEqual([f["name"] for f in vt["files"]], ["victory.exe", "victory-warm.exe"])
+            self.assertEqual([d["name"] for d in vt["dropped"]], ["victory-play.exe"])
+            self.assertEqual(sorted(os.listdir(stage)), ["victory-warm.exe", "victory.exe"])
+
+    def test_the_main_program_keeps_the_build_out(self):
+        self.assertIsNone(build.drop_flagged_extras("victory", self.scan(**{"victory.exe": "flagged", "a.exe": "clean"}), "/nonexistent"))
+        self.assertIsNone(build.drop_flagged_extras("xcl", self.scan(**{"xcl.exe": "clean", "opus.dll": "flagged"}), "/nonexistent"))
+
+    def test_still_pending_stays_pending(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as stage:
+            vt = build.drop_flagged_extras("victory", self.scan(**{"victory.exe": "pending", "x.exe": "flagged"}), stage)
+            self.assertEqual(vt["verdict"], "pending")
+
+
 if __name__ == "__main__":
     unittest.main()

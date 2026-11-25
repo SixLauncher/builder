@@ -343,6 +343,35 @@ def build_tree(family, src):
     return out
 
 
+# What a build cannot do without: VirusTotal flagging one of these keeps the whole build out.
+# Any other program a project builds (DexNom's victory-play.exe, victory-warm.exe) is an extra:
+# flagged, it is taken out of the archive and the rest is published.
+REQUIRED = {
+    "victory": {"victory.exe"},
+    "xcl": {"xcl.exe", "dxcompiler.dll", "dxil.dll", "opus.dll"},
+}
+
+
+def drop_flagged_extras(family, vt, stage):
+    """For a flagged scan: None when a required file is flagged; otherwise the scan without the
+    flagged extras (deleted from `stage`, with their .pdb), listed under "dropped"."""
+    flagged = [f for f in vt.get("files", []) if f.get("state") == "flagged"]
+    if not flagged or any(f["name"] in REQUIRED[family] for f in flagged):
+        return None
+    for f in flagged:
+        path = os.path.join(stage, f["name"])
+        for p in (path, os.path.splitext(path)[0] + ".pdb"):
+            if os.path.isfile(p):
+                os.remove(p)
+    names = {f["name"] for f in flagged}
+    kept = [f for f in vt["files"] if f["name"] not in names]
+    states = {f.get("state") for f in kept}
+    verdict = "flagged" if "flagged" in states else ("pending" if "pending" in states or not kept else "clean")
+    return dict(vt, files=kept, verdict=verdict, dropped=[
+        {k: f.get(k) for k in ("name", "sha256", "malicious", "suspicious", "engines", "link")} for f in flagged
+    ])
+
+
 _dxc = {}
 
 
@@ -482,9 +511,14 @@ def main():
             collect(family, c["repo"], commit, src, out_dir, stage)
             vt = scan(stage, c["repo"], commit)
             if vt.get("verdict") == "flagged":
-                note["result"] = "VirusTotal flagged the build; not published"
-                log(f"{c['name']}: flagged by VirusTotal, not published")
-                continue
+                trimmed = drop_flagged_extras(family, vt, stage)
+                if trimmed is None:
+                    note["result"] = "VirusTotal flagged the build; not published"
+                    log(f"{c['name']}: flagged by VirusTotal, not published")
+                    continue
+                gone = ", ".join(d["name"] for d in trimmed["dropped"])
+                log(f"{c['name']}: VirusTotal flagged {gone}; published without it")
+                vt = trimmed
             file = archive_name(family, c["repo"], commit)
             path = os.path.join(OUT, file)
             sha, size = pack(stage, path)
@@ -492,6 +526,8 @@ def main():
             builds.append({"family": family, "file": file, "sha256": sha, "size": size, "commit": commit,
                            "repo": c["repo"], "effort": c["name"], "score": c["score"], "virustotal": vt})
             note["result"] = f"built ({branch} @ {commit[:12]}, VirusTotal {vt.get('verdict')})"
+            if vt.get("dropped"):
+                note["result"] += "; without " + ", ".join(d["name"] for d in vt["dropped"]) + " (flagged)"
             log(f"{c['name']}: built {file} ({size} bytes)")
         except Exception as e:
             note["result"] = f"build failed: {str(e).splitlines()[0][:300]}"

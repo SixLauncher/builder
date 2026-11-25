@@ -12,7 +12,10 @@ A cada execução (`builder/build.py`):
 4. compila o commit mais novo para Windows a partir do Linux com
    [cargo-xwin](https://github.com/rust-cross/cargo-xwin) (`x86_64-pc-windows-msvc`), com o
    toolchain que o próprio repositório fixa. Um repositório e commit já publicados não são recompilados;
-5. passa o resultado no VirusTotal (`builder/virustotal-scan.py`); build marcada não é publicada;
+5. passa o resultado no VirusTotal (`builder/virustotal-scan.py`). Se o programa principal
+   (`victory.exe`, ou `xcl.exe` e as DLLs dele) for marcado, a build não é publicada; um programa
+   extra marcado (como o `victory-play.exe` do DexNom) sai do pacote, fica registrado em `dropped` no
+   `runtimes.json`, e o resto é publicado;
 6. publica cada build como `.tar.gz` na release `runtimes` deste repositório, depois o
    `runtimes.json`, e apaga os arquivos que o manifesto novo não cita mais.
 
