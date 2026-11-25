@@ -149,35 +149,27 @@ def candidates(tracker, min_score):
     return out
 
 
-# Repositories built whatever their PortWatch VI score (or when the tracker does not list them).
-# `platform` marks a build made for one host: VILauncher on Linux leaves "macos" builds out,
-# VILauncher on macOS offers them. A repository the tracker lists keeps the tracker's name and
-# score.
+# Repositories followed by name. They get no pass: like every other, one is built only when
+# PortWatch VI lists it and it scores MIN_SCORE or more (the double check). The list adds what
+# the tracker does not say: `platform` marks a build made for one host (VILauncher on Linux
+# leaves "macos" builds out, VILauncher on macOS offers them).
 EXTRA = [
     {"repo": "romainhedouin/VIctory-macOS", "name": "VIctory macOS (romainhedouin)", "platform": "macos"},
     {"repo": "romainhedouin/VIctory-Belobug-AMD", "name": "Belobug AMD (romainhedouin)"},
 ]
 
 
-def with_extras(cands, tracker, extras):
-    """The tracker's candidates, then each extra repository not already among them."""
-    out = list(cands)
-    seen = {c["repo"].lower() for c in out}
-    listed = {(e.get("repo") or "").lower(): e for e in tracker.get("efforts", [])}
-    for x in extras:
-        key = x["repo"].lower()
-        if key in seen:
-            for c in out:
-                if c["repo"].lower() == key and x.get("platform"):
-                    c["platform"] = x["platform"]
-            continue
-        e = listed.get(key)
-        out.append({"repo": x["repo"], "name": (e or {}).get("name") or x["name"],
-                    "branch": x.get("branch") or (e or {}).get("branch") or "",
-                    "score": round(score(e), 1) if e else None,
-                    "platform": x.get("platform"), "extra": True})
-        seen.add(key)
-    return out
+def with_extras(cands, extras):
+    """The candidates with the extras' platform applied, and the extras still waiting for
+    PortWatch VI (not listed, or below the score)."""
+    by_repo = {x["repo"].lower(): x for x in extras}
+    out = []
+    for c in cands:
+        x = by_repo.get(c["repo"].lower())
+        out.append(dict(c, platform=x["platform"]) if x and x.get("platform") else c)
+    have = {c["repo"].lower() for c in cands}
+    waiting = [x for x in extras if x["repo"].lower() not in have]
+    return out, waiting
 
 
 def archive_name(family, repo, commit):
@@ -505,8 +497,10 @@ def main():
     cands = candidates(tracker, MIN_SCORE)
     log(f"{len(cands)} efforts with public code score {MIN_SCORE:g} or more: "
         + ", ".join(f"{c['name']} ({c['score']})" for c in cands))
-    cands = with_extras(cands, tracker, EXTRA)
-    log("extra repositories: " + ", ".join(c["name"] for c in cands if c.get("extra")))
+    cands, waiting = with_extras(cands, EXTRA)
+    if waiting:
+        log("waiting for PortWatch VI to list them at " + f"{MIN_SCORE:g} or more: "
+            + ", ".join(x["repo"] for x in waiting))
     notes, builds, new_files = [], [], []
     built = 0
     for c in cands:

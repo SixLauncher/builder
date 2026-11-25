@@ -19,10 +19,12 @@ A cada execução (`builder/build.py`):
 6. publica cada build como `.tar.gz` na release `runtimes` deste repositório, depois o
    `runtimes.json`, e apaga os arquivos que o manifesto novo não cita mais.
 
-Repositórios extras (`EXTRA` em `builder/build.py`) são compilados sempre, com ou sem nota no
-PortWatch: hoje o [VIctory-macOS](https://github.com/romainhedouin/VIctory-macOS) e o
-[VIctory-Belobug-AMD](https://github.com/romainhedouin/VIctory-Belobug-AMD) do romainhedouin. Uma
-build marcada com `platform: "macos"` só aparece no VILauncher para macOS (e nunca é a padrão da
+Repositórios acompanhados pelo nome (`EXTRA` em `builder/build.py`): hoje o
+[VIctory-macOS](https://github.com/romainhedouin/VIctory-macOS) e o
+[VIctory-Belobug-AMD](https://github.com/romainhedouin/VIctory-Belobug-AMD) do romainhedouin. Eles
+passam pela mesma conferência dupla dos outros: só são compilados quando o PortWatch VI os lista com
+nota ≥ `MIN_SCORE`; até lá o log diz que estão aguardando. A lista só acrescenta o que o tracker não
+diz: uma build com `platform: "macos"` só aparece no VILauncher para macOS (e nunca é a padrão da
 família).
 
 O `runtimes.json` mantém o formato que o VILauncher já lê: `victory` e `xcl` são a melhor build de

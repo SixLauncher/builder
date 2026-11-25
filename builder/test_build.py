@@ -46,18 +46,18 @@ class Score(unittest.TestCase):
 
 
 class Extras(unittest.TestCase):
-    def test_extras_join_the_candidates(self):
+    def test_only_what_portwatch_lists_at_the_score(self):
         tracker = {"efforts": [
             effort("ZETTROX", "Zettrox/ztrx", **PLAYABLE, story=0.1, render=0.3, fps=2, stability=0.8),
-            effort("Listed", "a/listed", loads=1),
+            effort("Mac", "x/Mac", **PLAYABLE, story=0.1, render=0.3, fps=2, stability=0.8),
+            effort("Low", "a/low", loads=1),
         ]}
-        cands = build.candidates(tracker, 59)
-        extras = [{"repo": "x/Mac", "name": "Mac", "platform": "macos"},
-                  {"repo": "a/LISTED", "name": "ignored"},
-                  {"repo": "zettrox/ztrx", "name": "dup"}]
-        got = build.with_extras(cands, tracker, extras)
-        self.assertEqual([(c["name"], c["score"], c.get("platform")) for c in got],
-                         [("ZETTROX", 64.2, None), ("Mac", None, "macos"), ("Listed", 10.0, None)])
+        extras = [{"repo": "x/mac", "name": "Mac", "platform": "macos"},
+                  {"repo": "a/low", "name": "Low"},
+                  {"repo": "n/unlisted", "name": "Unlisted"}]
+        got, waiting = build.with_extras(build.candidates(tracker, 59), extras)
+        self.assertEqual([(c["name"], c.get("platform")) for c in got], [("Mac", "macos"), ("ZETTROX", None)])
+        self.assertEqual([x["repo"] for x in waiting], ["a/low", "n/unlisted"])
 
     def test_the_real_list(self):
         self.assertEqual([x["repo"] for x in build.EXTRA],
