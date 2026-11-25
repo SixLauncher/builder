@@ -35,6 +35,7 @@ import datetime
 import hashlib
 import json
 import os
+import pwd
 import re
 import shutil
 import subprocess
@@ -252,12 +253,18 @@ def run_as_builder(cmd, cwd, timeout):
         "CARGO_INCREMENTAL": "0",
         "LANG": "C.UTF-8",
     }
-    full = ["runuser", "-u", BUILD_USER, "--", "env", "-i"] + [f"{k}={v}" for k, v in env.items()] + cmd
-    if os.geteuid() != 0:  # local runs: just drop the environment
-        full = ["env", "-i"] + [f"{k}={v}" for k, v in env.items()] + cmd
+    drop = None
+    if os.geteuid() == 0:  # local runs as an ordinary user only get the clean environment
+        pw = pwd.getpwnam(BUILD_USER)
+
+        def drop():
+            os.setgroups([])
+            os.setgid(pw.pw_gid)
+            os.setuid(pw.pw_uid)
     log("$ " + " ".join(cmd))
     try:
-        p = subprocess.run(full, cwd=cwd, timeout=timeout, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        p = subprocess.run(cmd, cwd=cwd, env=env, preexec_fn=drop, timeout=timeout,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     finally:
         if os.geteuid() == 0:  # nothing the build started outlives it (also on a timeout)
             subprocess.run(["pkill", "-KILL", "-u", BUILD_USER], check=False)
