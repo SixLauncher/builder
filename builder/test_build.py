@@ -61,7 +61,8 @@ class Extras(unittest.TestCase):
 
     def test_the_real_list(self):
         self.assertEqual([x["repo"] for x in build.EXTRA],
-                         ["romainhedouin/VIctory-macOS", "romainhedouin/VIctory-Belobug-AMD"])
+                         ["romainhedouin/VIctory-macOS", "romainhedouin/VIctory-Belobug-AMD",
+                          "avatarmanz/VIctory-7900XTX"])
         self.assertTrue(all(build.REPO_RE.match(x["repo"]) for x in build.EXTRA))
 
 

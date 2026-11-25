@@ -21,7 +21,8 @@ A cada execução (`builder/build.py`):
 
 Repositórios acompanhados pelo nome (`EXTRA` em `builder/build.py`): hoje o
 [VIctory-macOS](https://github.com/romainhedouin/VIctory-macOS) e o
-[VIctory-Belobug-AMD](https://github.com/romainhedouin/VIctory-Belobug-AMD) do romainhedouin. Eles
+[VIctory-Belobug-AMD](https://github.com/romainhedouin/VIctory-Belobug-AMD) do romainhedouin, e o
+[VIctory-7900XTX](https://github.com/avatarmanz/VIctory-7900XTX) do AvatarManz. Eles
 passam pela mesma conferência dupla dos outros: só são compilados quando o PortWatch VI os lista com
 nota ≥ `MIN_SCORE`; até lá o log diz que estão aguardando. A lista só acrescenta o que o tracker não
 diz: uma build com `platform: "macos"` só aparece no VILauncher para macOS (e nunca é a padrão da

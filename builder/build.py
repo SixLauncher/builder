@@ -156,6 +156,7 @@ def candidates(tracker, min_score):
 EXTRA = [
     {"repo": "romainhedouin/VIctory-macOS", "name": "VIctory macOS (romainhedouin)", "platform": "macos"},
     {"repo": "romainhedouin/VIctory-Belobug-AMD", "name": "Belobug AMD (romainhedouin)"},
+    {"repo": "avatarmanz/VIctory-7900XTX", "name": "AvatarManz"},
 ]
 
 
