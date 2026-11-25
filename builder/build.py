@@ -148,8 +148,18 @@ def http(url, data=None, method=None, headers=None, timeout=60, raw=False):
         h["Authorization"] = f"Bearer {TOKEN}"
     h.update(headers or {})
     req = urllib.request.Request(url, data=data, method=method, headers=h)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        body = r.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read()
+    except urllib.error.HTTPError as e:
+        # GitHub says why in the body ("Resource not accessible by personal access token", ...).
+        detail = e.read()[:500].decode("utf-8", "replace").strip()
+        hint = ""
+        if e.code in (401, 403) and "github.com" in (urllib.parse.urlparse(url).hostname or ""):
+            hint = (f" -- check GITHUB_TOKEN: it needs Contents: Read and write on {REPO} (a fine-grained"
+                    " token owned by the organization, approved if the organization requires it)")
+        e.msg = f"{e.msg}: {method or ('POST' if data else 'GET')} {url}: {detail}{hint}"
+        raise
     if raw:
         return body
     return json.loads(body) if body else None
