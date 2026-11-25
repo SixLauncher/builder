@@ -45,6 +45,26 @@ class Score(unittest.TestCase):
         self.assertTrue(all(c.isalnum() or c in "._-" for c in name))
 
 
+class Extras(unittest.TestCase):
+    def test_extras_join_the_candidates(self):
+        tracker = {"efforts": [
+            effort("ZETTROX", "Zettrox/ztrx", **PLAYABLE, story=0.1, render=0.3, fps=2, stability=0.8),
+            effort("Listed", "a/listed", loads=1),
+        ]}
+        cands = build.candidates(tracker, 59)
+        extras = [{"repo": "x/Mac", "name": "Mac", "platform": "macos"},
+                  {"repo": "a/LISTED", "name": "ignored"},
+                  {"repo": "zettrox/ztrx", "name": "dup"}]
+        got = build.with_extras(cands, tracker, extras)
+        self.assertEqual([(c["name"], c["score"], c.get("platform")) for c in got],
+                         [("ZETTROX", 64.2, None), ("Mac", None, "macos"), ("Listed", 10.0, None)])
+
+    def test_the_real_list(self):
+        self.assertEqual([x["repo"] for x in build.EXTRA],
+                         ["romainhedouin/VIctory-macOS", "romainhedouin/VIctory-Belobug-AMD"])
+        self.assertTrue(all(build.REPO_RE.match(x["repo"]) for x in build.EXTRA))
+
+
 class Supplied(unittest.TestCase):
     def setUp(self):
         import tempfile

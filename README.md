@@ -19,6 +19,12 @@ A cada execução (`builder/build.py`):
 6. publica cada build como `.tar.gz` na release `runtimes` deste repositório, depois o
    `runtimes.json`, e apaga os arquivos que o manifesto novo não cita mais.
 
+Repositórios extras (`EXTRA` em `builder/build.py`) são compilados sempre, com ou sem nota no
+PortWatch: hoje o [VIctory-macOS](https://github.com/romainhedouin/VIctory-macOS) e o
+[VIctory-Belobug-AMD](https://github.com/romainhedouin/VIctory-Belobug-AMD) do romainhedouin. Uma
+build marcada com `platform: "macos"` só aparece no VILauncher para macOS (e nunca é a padrão da
+família).
+
 O `runtimes.json` mantém o formato que o VILauncher já lê: `victory` e `xcl` são a melhor build de
 cada família (launchers antigos continuam funcionando) e `builds` lista todas, com a nota, para o
 launcher deixar escolher. Alguns forks deixam fora do repositório dados que o próprio setup deles baixa (o DexNom, as tabelas

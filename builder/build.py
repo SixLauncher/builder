@@ -149,6 +149,37 @@ def candidates(tracker, min_score):
     return out
 
 
+# Repositories built whatever their PortWatch VI score (or when the tracker does not list them).
+# `platform` marks a build made for one host: VILauncher on Linux leaves "macos" builds out,
+# VILauncher on macOS offers them. A repository the tracker lists keeps the tracker's name and
+# score.
+EXTRA = [
+    {"repo": "romainhedouin/VIctory-macOS", "name": "VIctory macOS (romainhedouin)", "platform": "macos"},
+    {"repo": "romainhedouin/VIctory-Belobug-AMD", "name": "Belobug AMD (romainhedouin)"},
+]
+
+
+def with_extras(cands, tracker, extras):
+    """The tracker's candidates, then each extra repository not already among them."""
+    out = list(cands)
+    seen = {c["repo"].lower() for c in out}
+    listed = {(e.get("repo") or "").lower(): e for e in tracker.get("efforts", [])}
+    for x in extras:
+        key = x["repo"].lower()
+        if key in seen:
+            for c in out:
+                if c["repo"].lower() == key and x.get("platform"):
+                    c["platform"] = x["platform"]
+            continue
+        e = listed.get(key)
+        out.append({"repo": x["repo"], "name": (e or {}).get("name") or x["name"],
+                    "branch": x.get("branch") or (e or {}).get("branch") or "",
+                    "score": round(score(e), 1) if e else None,
+                    "platform": x.get("platform"), "extra": True})
+        seen.add(key)
+    return out
+
+
 def archive_name(family, repo, commit):
     slug = re.sub(r"[^a-z0-9]+", "-", repo.lower()).strip("-")
     return f"{family}-{slug}-{commit[:12]}.tar.gz"
@@ -474,6 +505,8 @@ def main():
     cands = candidates(tracker, MIN_SCORE)
     log(f"{len(cands)} efforts with public code score {MIN_SCORE:g} or more: "
         + ", ".join(f"{c['name']} ({c['score']})" for c in cands))
+    cands = with_extras(cands, tracker, EXTRA)
+    log("extra repositories: " + ", ".join(c["name"] for c in cands if c.get("extra")))
     notes, builds, new_files = [], [], []
     built = 0
     for c in cands:
@@ -491,7 +524,7 @@ def main():
         note["family"] = family
         old = published.get((c["repo"], commit))
         if old and old["file"] in asset_names:
-            builds.append(dict(old, score=c["score"], effort=c["name"]))
+            builds.append(dict(old, score=c["score"], effort=c["name"], platform=c.get("platform")))
             note["result"] = f"unchanged ({branch} @ {commit[:12]})"
             log(f"{c['name']}: {commit[:12]} already published")
             continue
@@ -499,7 +532,7 @@ def main():
             note["result"] = f"waits for the next run (at most {MAX_NEW} builds per run)"
             keep = next((b for b in prev.get("builds", []) if b.get("repo") == c["repo"] and b["file"] in asset_names), None)
             if keep:
-                builds.append(dict(keep, score=c["score"], effort=c["name"]))
+                builds.append(dict(keep, score=c["score"], effort=c["name"], platform=c.get("platform")))
             continue
         built += 1
         src = os.path.join(WORK, "src")
@@ -524,7 +557,8 @@ def main():
             sha, size = pack(stage, path)
             new_files.append(path)
             builds.append({"family": family, "file": file, "sha256": sha, "size": size, "commit": commit,
-                           "repo": c["repo"], "effort": c["name"], "score": c["score"], "virustotal": vt})
+                           "repo": c["repo"], "effort": c["name"], "score": c["score"], "virustotal": vt,
+                           "platform": c.get("platform")})
             note["result"] = f"built ({branch} @ {commit[:12]}, VirusTotal {vt.get('verdict')})"
             if vt.get("dropped"):
                 note["result"] += "; without " + ", ".join(d["name"] for d in vt["dropped"]) + " (flagged)"
@@ -534,13 +568,17 @@ def main():
             log(f"{c['name']}: build failed\n{e}")
             keep = next((b for b in prev.get("builds", []) if b.get("repo") == c["repo"] and b["file"] in asset_names), None)
             if keep:
-                builds.append(dict(keep, score=c["score"], effort=c["name"]))
+                builds.append(dict(keep, score=c["score"], effort=c["name"], platform=c.get("platform")))
                 note["result"] += f"; keeping {keep['commit'][:12]}"
         finally:
             shutil.rmtree(src, ignore_errors=True)
 
-    builds.sort(key=lambda b: -b["score"])
-    best = {fam: next((b for b in builds if b["family"] == fam), None) for fam in FAMILIES}
+    # Scored builds best first, then the extras the tracker does not score.
+    builds.sort(key=lambda b: -(b["score"] if b.get("score") is not None else -1))
+    # The default of each family (and what launchers without the list take) is never a build
+    # made for one host only.
+    general = [b for b in builds if not b.get("platform")]
+    best = {fam: next((b for b in general if b["family"] == fam), None) for fam in FAMILIES}
     manifest = {
         "schema": 1,
         "published_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -548,7 +586,7 @@ def main():
         "min_score": MIN_SCORE,
         "victory": best["victory"],
         "xcl": best["xcl"],
-        "recommended": builds[0]["family"] if builds else None,
+        "recommended": general[0]["family"] if general else None,
         "builds": builds,
         "candidates": [dict(n, result=n.get("result", "")) for n in notes],
     }
