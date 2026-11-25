@@ -20,7 +20,7 @@ build with its score, for the launcher to offer them all.
 
 Environment:
   GITHUB_TOKEN        token with contents:write on GITHUB_REPOSITORY (required unless DRY_RUN)
-  GITHUB_REPOSITORY   where the release lives (default SixLauncher/vilauncher-builder)
+  GITHUB_REPOSITORY   where the release lives (default SixLauncher/builder)
   VT_API_KEY          VirusTotal key; without it builds are published as "skipped"
   MIN_SCORE           59
   MAX_NEW_BUILDS      at most this many builds compiled per run (default 4)
@@ -50,7 +50,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TRACKER_URL = os.environ.get("TRACKER_URL", "https://raw.githubusercontent.com/4lwayz/portwatch-vi/main/data/tracker.json")
-REPO = os.environ.get("GITHUB_REPOSITORY", "SixLauncher/vilauncher-builder")
+REPO = os.environ.get("GITHUB_REPOSITORY", "SixLauncher/builder")
 TAG = os.environ.get("RELEASE_TAG", "runtimes")
 TOKEN = os.environ.get("GITHUB_TOKEN", "")
 MIN_SCORE = float(os.environ.get("MIN_SCORE", "59"))

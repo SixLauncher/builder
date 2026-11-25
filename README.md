@@ -1,4 +1,4 @@
-# vilauncher-builder
+# builder
 
 Compila, para o VILauncher, os projetos que o [PortWatch VI](https://github.com/4lwayz/portwatch-vi)
 avalia com **59% ou mais**. Roda no Railway como cron, **a cada 3 horas**.
@@ -57,7 +57,7 @@ encerrado ao fim de cada build. O que é verificado, empacotado e enviado fica n
 Para testar sem publicar: `DRY_RUN=1` (imprime o `runtimes.json`).
 
 O VILauncher baixa de
-`https://github.com/SixLauncher/vilauncher-builder/releases/download/runtimes/runtimes.json`
+`https://github.com/SixLauncher/builder/releases/download/runtimes/runtimes.json`
 (trocável com `VILAUNCHER_RUNTIMES_URL`).
 
 ## Testes
