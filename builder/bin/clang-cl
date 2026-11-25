@@ -1,0 +1,12 @@
+#!/bin/sh
+# cargo-xwin compiles C code with clang-cl. libudis86-sys (an xcl dependency) passes gcc's
+# `-includestring.h`, which clang-cl ignores, and then memset is undeclared: a warning in
+# MSVC's cl.exe (so the Windows runners built it), an error in clang. Force-include string.h
+# for C sources only; doing it for every input breaks the assembly that blake3 (a VIctory
+# dependency) also compiles through clang-cl.
+for a in "$@"; do
+  case "$a" in
+    *.c) exec clang --driver-mode=cl /FIstring.h "$@" ;;
+  esac
+done
+exec clang --driver-mode=cl "$@"
