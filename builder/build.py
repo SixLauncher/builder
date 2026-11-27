@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
-"""Builds the VIctory and XCL trees PortWatch VI rates as playable enough, for VILauncher.
+"""Builds ScarlettPort's runtime, and the VIctory and XCL trees PortWatch VI rates as playable
+enough, for SixLauncher.
 
 Railway runs this every 3 hours (railway.json). Each run:
 
  1. reads PortWatch VI's tracker and scores every effort the way the site does (0-100);
- 2. keeps the efforts with public code scoring MIN_SCORE (59) or more, best first;
+ 2. keeps the efforts with public code scoring MIN_SCORE (59) or more, best first, plus the
+    PINNED repositories (ScarlettPort, the default), which PortWatch VI does not track;
  3. for each, finds what it is from its default branch: a VIctory tree (apps/victory/Cargo.toml)
-    or an XCL tree (crates/xcl/Cargo.toml); anything else, archived or gone, is skipped;
+    or an XCL tree (crates/xcl/Cargo.toml) or ScarlettPort (engine/apps/scarlett/Cargo.toml);
+    anything else, archived or gone, is skipped;
  4. builds the newest commit for Windows with cargo-xwin (x86_64-pc-windows-msvc), as the
     unprivileged `build` user and without any of this service's secrets in its environment;
     a repository and commit already published is not rebuilt;
  5. scans the result on VirusTotal (virustotal-scan.py); a flagged build is not published;
  6. publishes each build as a .tar.gz on the `runtimes` release of GITHUB_REPOSITORY, then
-    runtimes.json, then deletes the archives the new manifest no longer names.
+    the manifests, then deletes the archives the new manifests no longer name.
 
-runtimes.json keeps the shape VILauncher already reads (schema 1): `victory` and `xcl` are the
-best build of each family, so older launchers keep working, and `builds` lists every published
-build with its score, for the launcher to offer them all.
+Two manifests: runtimes-v2.json lists every build, ScarlettPort's included, with `scarlett` and
+`recommended: "scarlett"` (the default backend). runtimes.json keeps the shape launchers before
+ScarlettPort read (schema 1): VIctory and XCL only, because they refuse a manifest naming a
+family they do not know. In both, `victory`, `xcl` (and `scarlett`) are the best build of each
+family, and `builds` lists every published build with its score.
 
 Environment:
   GITHUB_TOKEN        token with contents:write on GITHUB_REPOSITORY (required unless DRY_RUN)
@@ -83,6 +88,21 @@ FAMILIES = {
     # family: (file that marks the tree, cargo package, exe, commit file, label, --locked)
     "victory": ("apps/victory/Cargo.toml", "victory", "victory.exe", "VICTORY_COMMIT.txt", "VIctory", True),
     "xcl": ("crates/xcl/Cargo.toml", "xcl", "xcl.exe", "XCL_COMMIT.txt", "xcl", False),
+    "scarlett": ("engine/apps/scarlett/Cargo.toml", "scarlett", "scarlett.exe", "SCARLETT_COMMIT.txt", "ScarlettPort", True),
+}
+# Where a family's cargo workspace is in its repository (the root when not listed), and the
+# features its release build turns on (ScarlettPort's release.yml: diagnostics).
+WORKSPACE = {"scarlett": "engine"}
+FEATURES = {"scarlett": ["diagnostics"]}
+# Families launchers before ScarlettPort know: the only ones runtimes.json may name.
+LEGACY = ("victory", "xcl")
+
+# The D3D12 Agility SDK ScarlettPort's runtime loads from D3D12\ beside it (D3D12SDKVersion 614):
+# Microsoft's NuGet package, pinned by version and SHA-256.
+AGILITY = {
+    "url": "https://www.nuget.org/api/v2/package/Microsoft.Direct3D.D3D12/1.614.1",
+    "sha256": "9880aa91602dd51dd6cf7911a2bca7a2323513b15338573cde014b3356eeaff2",
+    "dlls": ("D3D12Core.dll", "d3d12SDKLayers.dll"),
 }
 
 
@@ -158,6 +178,20 @@ EXTRA = [
     {"repo": "romainhedouin/VIctory-Belobug-AMD", "name": "Belobug AMD (romainhedouin)"},
     {"repo": "avatarmanz/VIctory-7900XTX", "name": "AvatarManz"},
 ]
+
+
+# Built on every run whatever the tracker says: ScarlettPort is SixLauncher's default backend and
+# PortWatch VI does not track it, so it cannot pass the double check. No score; listed first.
+PINNED = [
+    {"repo": "SixLauncher/ScarlettPort", "name": "ScarlettPort", "branch": "", "score": None, "pinned": True},
+]
+
+
+def with_pinned(cands, pinned):
+    """The pinned repositories first, then the scored candidates (a pinned one listed by the
+    tracker too keeps its pinned place only)."""
+    have = {p["repo"].lower() for p in pinned}
+    return [dict(p) for p in pinned] + [c for c in cands if c["repo"].lower() not in have]
 
 
 def with_extras(cands, extras):
@@ -350,6 +384,7 @@ def supply_missing(src):
 
 def build_tree(family, src):
     _marker, package, exe, _cf, _label, locked = FAMILIES[family]
+    src = os.path.join(src, WORKSPACE.get(family, ""))
     for path in supply_missing(src):
         log(f"supplied {path} (pinned upstream copy, SHA-256 checked)")
     deadline = time.monotonic() + BUILD_TIMEOUT
@@ -360,6 +395,8 @@ def build_tree(family, src):
     cmd = ["cargo", "xwin", "build", "--release", "-p", package, "--target", TARGET]
     if locked:
         cmd.insert(3, "--locked")
+    if FEATURES.get(family):
+        cmd += ["--features", ",".join(FEATURES[family])]
     run_as_builder(cmd, src, left())
     out = os.path.join(src, "target", TARGET, "release")
     if not os.path.isfile(os.path.join(out, exe)):
@@ -373,6 +410,7 @@ def build_tree(family, src):
 REQUIRED = {
     "victory": {"victory.exe"},
     "xcl": {"xcl.exe", "dxcompiler.dll", "dxil.dll", "opus.dll"},
+    "scarlett": {"scarlett.exe", "D3D12/D3D12Core.dll", "D3D12/d3d12SDKLayers.dll"},
 }
 
 
@@ -416,6 +454,28 @@ def dxc():
     return _dxc
 
 
+_agility = {}
+
+
+def agility():
+    """The Agility SDK package unpacked once per run, after its SHA-256 is checked."""
+    if not _agility:
+        data = http(AGILITY["url"], raw=True, timeout=600, headers={"Accept": "*/*"})
+        got = hashlib.sha256(data).hexdigest()
+        if got != AGILITY["sha256"]:
+            raise RuntimeError(f"{AGILITY['url']}: SHA-256 {got}, expected {AGILITY['sha256']}")
+        d = os.path.join(OUT, "agility")
+        shutil.rmtree(d, ignore_errors=True)
+        os.makedirs(d)
+        path = os.path.join(d, "agility.nupkg")
+        with open(path, "wb") as f:
+            f.write(data)
+        with zipfile.ZipFile(path) as z:
+            z.extractall(os.path.join(d, "x"))
+        _agility.update(dir=os.path.join(d, "x"), version=f"D3D12 Agility SDK {AGILITY['url'].rsplit('/', 1)[-1]}")
+    return _agility
+
+
 def opus_dll():
     """opus.dll, built once by the image (Dockerfile) with clang-cl against the same SDK."""
     path = os.environ.get("OPUS_DLL", "/opt/opus/bin/opus.dll")
@@ -438,9 +498,22 @@ def collect(family, repo, commit, src, out_dir, stage):
             pdb = os.path.join(out_dir, name[:-4] + ".pdb")
             if os.path.isfile(pdb):
                 shutil.copy2(pdb, stage)
-    if os.path.isfile(os.path.join(src, "LICENSE")):
-        shutil.copy2(os.path.join(src, "LICENSE"), os.path.join(lic, f"{label}-LICENSE.txt"))
+    tree = os.path.join(src, WORKSPACE.get(family, ""))
+    for top in (tree, src):
+        if os.path.isfile(os.path.join(top, "LICENSE")):
+            shutil.copy2(os.path.join(top, "LICENSE"), os.path.join(lic, f"{label}-LICENSE.txt"))
+            break
     lines = [f"{label} {commit}", f"repo {repo}"]
+    if family == "scarlett":
+        a = agility()
+        d3d12 = os.path.join(stage, "D3D12")
+        os.makedirs(d3d12)
+        for dll in AGILITY["dlls"]:
+            shutil.copy2(os.path.join(a["dir"], "build", "native", "bin", "x64", dll), d3d12)
+        for name in ("LICENSE.txt", "LICENSE-CODE.txt"):
+            if os.path.isfile(os.path.join(a["dir"], name)):
+                shutil.copy2(os.path.join(a["dir"], name), os.path.join(lic, f"Agility-{name}"))
+        lines.append(a["version"])
     if family == "xcl":
         d = dxc()
         for dll in ("dxcompiler.dll", "dxil.dll"):
@@ -499,6 +572,7 @@ def main():
     log(f"{len(cands)} efforts with public code score {MIN_SCORE:g} or more: "
         + ", ".join(f"{c['name']} ({c['score']})" for c in cands))
     cands, waiting = with_extras(cands, EXTRA)
+    cands = with_pinned(cands, PINNED)
     if waiting:
         log("waiting for PortWatch VI to list them at " + f"{MIN_SCORE:g} or more: "
             + ", ".join(x["repo"] for x in waiting))
@@ -506,6 +580,8 @@ def main():
     built = 0
     for c in cands:
         note = {"repo": c["repo"], "name": c["name"], "score": c["score"], "family": None}
+        if c.get("pinned"):
+            note["pinned"] = True
         notes.append(note)
         try:
             found, why = inspect(c)
@@ -519,7 +595,7 @@ def main():
         note["family"] = family
         old = published.get((c["repo"], commit))
         if old and old["file"] in asset_names:
-            builds.append(dict(old, score=c["score"], effort=c["name"], platform=c.get("platform")))
+            builds.append(dict(old, score=c["score"], effort=c["name"], platform=c.get("platform"), pinned=bool(c.get("pinned"))))
             note["result"] = f"unchanged ({branch} @ {commit[:12]})"
             log(f"{c['name']}: {commit[:12]} already published")
             continue
@@ -527,7 +603,7 @@ def main():
             note["result"] = f"waits for the next run (at most {MAX_NEW} builds per run)"
             keep = next((b for b in prev.get("builds", []) if b.get("repo") == c["repo"] and b["file"] in asset_names), None)
             if keep:
-                builds.append(dict(keep, score=c["score"], effort=c["name"], platform=c.get("platform")))
+                builds.append(dict(keep, score=c["score"], effort=c["name"], platform=c.get("platform"), pinned=bool(c.get("pinned"))))
             continue
         built += 1
         src = os.path.join(WORK, "src")
@@ -553,7 +629,7 @@ def main():
             new_files.append(path)
             builds.append({"family": family, "file": file, "sha256": sha, "size": size, "commit": commit,
                            "repo": c["repo"], "effort": c["name"], "score": c["score"], "virustotal": vt,
-                           "platform": c.get("platform")})
+                           "platform": c.get("platform"), "pinned": bool(c.get("pinned"))})
             note["result"] = f"built ({branch} @ {commit[:12]}, VirusTotal {vt.get('verdict')})"
             if vt.get("dropped"):
                 note["result"] += "; without " + ", ".join(d["name"] for d in vt["dropped"]) + " (flagged)"
@@ -563,43 +639,57 @@ def main():
             log(f"{c['name']}: build failed\n{e}")
             keep = next((b for b in prev.get("builds", []) if b.get("repo") == c["repo"] and b["file"] in asset_names), None)
             if keep:
-                builds.append(dict(keep, score=c["score"], effort=c["name"], platform=c.get("platform")))
+                builds.append(dict(keep, score=c["score"], effort=c["name"], platform=c.get("platform"), pinned=bool(c.get("pinned"))))
                 note["result"] += f"; keeping {keep['commit'][:12]}"
         finally:
             shutil.rmtree(src, ignore_errors=True)
 
-    # Scored builds best first, then the extras the tracker does not score.
-    builds.sort(key=lambda b: -(b["score"] if b.get("score") is not None else -1))
-    # The default of each family (and what launchers without the list take) is never a build
-    # made for one host only.
-    general = [b for b in builds if not b.get("platform")]
-    best = {fam: next((b for b in general if b["family"] == fam), None) for fam in FAMILIES}
-    manifest = {
-        "schema": 1,
-        "published_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "run_url": f"https://github.com/{REPO}/releases/tag/{TAG}",
-        "min_score": MIN_SCORE,
-        "victory": best["victory"],
-        "xcl": best["xcl"],
-        "recommended": general[0]["family"] if general else None,
-        "builds": builds,
-        "candidates": [dict(n, result=n.get("result", "")) for n in notes],
-    }
-    mpath = os.path.join(OUT, "runtimes.json")
-    with open(mpath, "w") as f:
-        json.dump(manifest, f, indent=2)
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    v2, v1 = manifests(builds, notes, now)
+    paths = []
+    for name, manifest in (("runtimes-v2.json", v2), ("runtimes.json", v1)):
+        paths.append(os.path.join(OUT, name))
+        with open(paths[-1], "w") as f:
+            json.dump(manifest, f, indent=2)
     if DRY_RUN:
-        print(json.dumps(manifest, indent=2))
+        print(json.dumps(v2, indent=2))
         return
-    for path in new_files:  # archives before the manifest, so it never names a missing one
+    for path in new_files:  # archives before the manifests, so they never name a missing one
         upload(rel, path)
-    upload(rel, mpath)
-    keep = {b["file"] for b in builds} | {"runtimes.json"}
+    for path in paths:
+        upload(rel, path)
+    keep = {b["file"] for b in v2["builds"]} | {"runtimes.json", "runtimes-v2.json"}
     for a in list(rel.get("assets", [])):
         if a["name"] not in keep:
             gh(f"repos/{REPO}/releases/assets/{a['id']}", method="DELETE")
             log(f"deleted {a['name']} (no longer in runtimes.json)")
     log(f"published {len(builds)} builds ({len(new_files)} new)")
+
+
+def manifests(builds, notes, now):
+    """(runtimes-v2.json, runtimes.json) for these builds and candidate notes."""
+    # Pinned builds first (the default), then scored builds best first, then the extras the
+    # tracker does not score.
+    builds = sorted(builds, key=lambda b: (not b.get("pinned"), -(b["score"] if b.get("score") is not None else -1)))
+    # The default of each family (and what launchers without the list take) is never a build
+    # made for one host only.
+    general = [b for b in builds if not b.get("platform")]
+    best = {fam: next((b for b in general if b["family"] == fam), None) for fam in FAMILIES}
+    base = {
+        "schema": 1,
+        "published_at": now,
+        "run_url": f"https://github.com/{REPO}/releases/tag/{TAG}",
+        "min_score": MIN_SCORE,
+    }
+    v2 = dict(base, victory=best["victory"], xcl=best["xcl"], scarlett=best["scarlett"],
+              recommended=general[0]["family"] if general else None, builds=builds,
+              candidates=[dict(n, result=n.get("result", "")) for n in notes])
+    old = [b for b in builds if b["family"] in LEGACY]
+    old_general = [b for b in old if not b.get("platform")]
+    v1 = dict(base, victory=best["victory"], xcl=best["xcl"],
+              recommended=old_general[0]["family"] if old_general else None, builds=old,
+              candidates=[dict(n, result=n.get("result", "")) for n in notes if n.get("family") in LEGACY + (None,) and not n.get("pinned")])
+    return v2, v1
 
 
 if __name__ == "__main__":
