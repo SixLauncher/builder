@@ -1,14 +1,18 @@
 # builder
 
-Compila, para o VILauncher, os projetos que o [PortWatch VI](https://github.com/4lwayz/portwatch-vi)
+Compila, para o SixLauncher, o runtime do [ScarlettPort](https://github.com/SixLauncher/ScarlettPort)
+(o backend padrão) e os projetos que o [PortWatch VI](https://github.com/4lwayz/portwatch-vi)
 avalia com **59% ou mais**. Roda no Railway como cron, **a cada 3 horas**.
 
 A cada execução (`builder/build.py`):
 
 1. lê o `tracker.json` do PortWatch VI e calcula a nota de cada projeto como o site (0–100);
-2. fica com os que têm código público e nota ≥ `MIN_SCORE` (59), do melhor para o pior;
+2. fica com os que têm código público e nota ≥ `MIN_SCORE` (59), do melhor para o pior, e põe na
+   frente os repositórios de `PINNED` (o ScarlettPort), que o PortWatch VI não acompanha;
 3. descobre o tipo de cada repositório pelo branch padrão: árvore do VIctory
-   (`apps/victory/Cargo.toml`) ou do XCL (`crates/xcl/Cargo.toml`); o resto é pulado, com o motivo;
+   (`apps/victory/Cargo.toml`), do XCL (`crates/xcl/Cargo.toml`) ou do ScarlettPort
+   (`engine/apps/scarlett/Cargo.toml`, compilado em `engine/` com `--features diagnostics`); o resto
+   é pulado, com o motivo;
 4. compila o commit mais novo para Windows a partir do Linux com
    [cargo-xwin](https://github.com/rust-cross/cargo-xwin) (`x86_64-pc-windows-msvc`), com o
    toolchain que o próprio repositório fixa. Um repositório e commit já publicados não são recompilados;
@@ -16,8 +20,14 @@ A cada execução (`builder/build.py`):
    (`victory.exe`, ou `xcl.exe` e as DLLs dele) for marcado, a build não é publicada; um programa
    extra marcado (como o `victory-play.exe` do DexNom) sai do pacote, fica registrado em `dropped` no
    `runtimes.json`, e o resto é publicado;
-6. publica cada build como `.tar.gz` na release `runtimes` deste repositório, depois o
-   `runtimes.json`, e apaga os arquivos que o manifesto novo não cita mais.
+6. publica cada build como `.tar.gz` na release `runtimes` deste repositório, depois os
+   manifestos, e apaga os arquivos que eles não citam mais.
+
+**ScarlettPort, a exceção à conferência dupla.** O PortWatch VI não acompanha o ScarlettPort, então
+ele nunca passaria pela nota mínima. Como é o backend padrão do SixLauncher, fica em `PINNED`: é
+compilado em toda execução, sem nota, e é o `recommended`. O pacote leva `scarlett.exe` e a pasta
+`D3D12/` com o Agility SDK 1.614.1 da Microsoft (pacote NuGet fixado por versão e SHA-256, `AGILITY`
+em `builder/build.py`), de onde o runtime carrega o D3D12 no Windows.
 
 Repositórios acompanhados pelo nome (`EXTRA` em `builder/build.py`): hoje o
 [VIctory-macOS](https://github.com/romainhedouin/VIctory-macOS) e o
@@ -28,9 +38,11 @@ nota ≥ `MIN_SCORE`; até lá o log diz que estão aguardando. A lista só acre
 diz: uma build com `platform: "macos"` só aparece no VILauncher para macOS (e nunca é a padrão da
 família).
 
-O `runtimes.json` mantém o formato que o VILauncher já lê: `victory` e `xcl` são a melhor build de
-cada família (launchers antigos continuam funcionando) e `builds` lista todas, com a nota, para o
-launcher deixar escolher. Alguns forks deixam fora do repositório dados que o próprio setup deles baixa (o DexNom, as tabelas
+Dois manifestos: o `runtimes-v2.json` lista todas as builds, ScarlettPort incluído (`scarlett` e
+`recommended: "scarlett"`); o `runtimes.json` mantém o formato que os launchers anteriores ao
+ScarlettPort leem, só com VIctory e XCL, porque eles recusam um manifesto com uma família que não
+conhecem. Nos dois, `victory`, `xcl` (e `scarlett`) são a melhor build de cada família e `builds`
+lista todas, com a nota, para o launcher deixar escolher. Alguns forks deixam fora do repositório dados que o próprio setup deles baixa (o DexNom, as tabelas
 BCPack em `crates/victory-formats/src/bcpack-tables.bin`): quando a pasta existe e o arquivo falta, o
 builder baixa a cópia do commit fixo do Marvisak/VIctory e confere o SHA-256 antes de compilar
 (`SUPPLIED` em `builder/build.py`). O pacote leva todos os programas que o projeto gera (no DexNom,
@@ -55,11 +67,11 @@ encerrado ao fim de cada build. O que é verificado, empacotado e enviado fica n
 3. A primeira imagem demora (Rust, cargo-xwin e o SDK do Windows ficam dentro dela). Ao baixar o
    CRT e o SDK, o cargo-xwin aceita a licença da Microsoft para eles.
 
-Para testar sem publicar: `DRY_RUN=1` (imprime o `runtimes.json`).
+Para testar sem publicar: `DRY_RUN=1` (imprime o `runtimes-v2.json`).
 
-O VILauncher baixa de
-`https://github.com/SixLauncher/builder/releases/download/runtimes/runtimes.json`
-(trocável com `VILAUNCHER_RUNTIMES_URL`).
+O SixLauncher baixa de
+`https://github.com/SixLauncher/builder/releases/download/runtimes/runtimes-v2.json`, e as versões
+anteriores ao ScarlettPort, de `.../runtimes.json` (trocável com `SIXLAUNCHER_RUNTIMES_URL`).
 
 ## Testes
 

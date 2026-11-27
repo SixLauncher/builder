@@ -129,5 +129,37 @@ class Flagged(unittest.TestCase):
             self.assertEqual(vt["verdict"], "pending")
 
 
+class Scarlett(unittest.TestCase):
+    def test_pinned_comes_first_whatever_the_tracker_says(self):
+        cands = [{"repo": "Zettrox/ztrx", "name": "ZETTROX", "branch": "", "score": 64.2},
+                 {"repo": "sixlauncher/scarlettport", "name": "listed", "branch": "", "score": 70.0}]
+        got = build.with_pinned(cands, build.PINNED)
+        self.assertEqual([(c["name"], c["score"], c.get("pinned")) for c in got],
+                         [("ScarlettPort", None, True), ("ZETTROX", 64.2, None)])
+
+    def test_manifests_keep_old_launchers_working(self):
+        b = lambda fam, score, **kw: dict({"family": fam, "file": f"{fam}.tar.gz", "commit": "c", "score": score}, **kw)  # noqa: E731
+        builds = [b("victory", 64.2), b("xcl", 60.0), b("scarlett", None, pinned=True), b("victory", 70.0, platform="macos")]
+        notes = [{"repo": "SixLauncher/ScarlettPort", "family": "scarlett", "pinned": True},
+                 {"repo": "Zettrox/ztrx", "family": "victory"}, {"repo": "gone/x", "family": None}]
+        v2, v1 = build.manifests(builds, notes, "now")
+        self.assertEqual(v2["recommended"], "scarlett")
+        self.assertEqual(v2["scarlett"]["family"], "scarlett")
+        self.assertEqual(v2["builds"][0]["family"], "scarlett", "the default first")
+        self.assertEqual(len(v2["candidates"]), 3)
+        self.assertNotIn("scarlett", v1)
+        self.assertEqual(v1["recommended"], "victory")
+        self.assertTrue(all(x["family"] in build.LEGACY for x in v1["builds"]))
+        self.assertEqual([n["repo"] for n in v1["candidates"]], ["Zettrox/ztrx", "gone/x"])
+        self.assertEqual(v1["victory"]["score"], 64.2, "a host-only build is never a family's default")
+
+    def test_families_know_where_scarlett_builds(self):
+        marker, package, exe, commit_file, _label, locked = build.FAMILIES["scarlett"]
+        self.assertEqual((marker, package, exe, commit_file, locked),
+                         ("engine/apps/scarlett/Cargo.toml", "scarlett", "scarlett.exe", "SCARLETT_COMMIT.txt", True))
+        self.assertEqual(build.WORKSPACE["scarlett"], "engine")
+        self.assertIn("D3D12/D3D12Core.dll", build.REQUIRED["scarlett"])
+
+
 if __name__ == "__main__":
     unittest.main()
